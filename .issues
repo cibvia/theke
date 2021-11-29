@@ -1,0 +1,32 @@
+Ac 18, 23. διερχόμενος. passif ?
+2TGreek - Robinson
+
+--
+sans doute déclenché après un clic sur un verbe, mais lequel ??
+
+  File "/home/docs_linux/theke/theke/gui/mainWindow.py", line 200, in handle_selected_word_changed
+    self._ThekeToolsBox.set_morph(w.word, w.morph)
+  File "/home/docs_linux/theke/theke/gui/widget_ThekeToolsBox.py", line 62, in set_morph
+    self._toolsBox_morphoView.set_morph(word, morph)
+  File "/home/docs_linux/theke/theke/gui/widget_ThekeMorphoView.py", line 13, in set_morph
+    analysis = theke.morphology.parse(morph)
+  File "/home/docs_linux/theke/theke/morphology/__init__.py", line 16, in parse
+    return parse_robinson(morph[1])
+  File "/home/docs_linux/theke/theke/morphology/robinson_morph.py", line 3, in parse_robinson
+    return [wordClasses.get(subMorph[0], lambda x: "inconnu")(subMorph[1:])]
+  File "/home/docs_linux/theke/theke/morphology/robinson_morph.py", line 61, in parse_robinson_verb
+    end = subMorph[1]
+IndexError: list index out of range
+
+--
+Ac 28, 29 et 30 sont superposés (les versets) car le v. 29 n'existe pas dans 2TGreek. (bug d'affichage)
+
+--
+Unprocessed Token: <sync type="lemma" class="Strongs" value="ὁ" /> in key Acts 18:26
+2TGreek
+--
+
+la morphologie Robinson (au moins) distingue les substantifs et les verbes. 
+pourrait-on envisager une recherche qui associe ceux qui partagent la même racine ?
+ex. οἰκοδομεῖ 1 Co 14, 4 et οἰκοδομὴν (v. 3 et 5). 
+leur Strong est très proche : 3618 et 3619 respectivement.
