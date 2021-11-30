@@ -65,3 +65,8 @@ Ces **grâces**, des plus éclatantes aux plus simples et aux plus largement dif
 
 
 …, etc. (ce que je fais facilement par grep sous terminal).
+
+--
+bug morphologique. 
+2TGreek
+ex. Ac 20, 24. cliquer sur μου donne (εγω) ce qui est correct, mais cliquer ensuite sur διαμαρτύρασθαι laisse (εγω), alors que le reste de la morphologie a bien changé pour refléter l'état du nouveau terme.
