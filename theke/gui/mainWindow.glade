@@ -65,6 +65,7 @@ Author: a2ohm
                 <property name="primary-icon-activatable">False</property>
                 <property name="primary-icon-sensitive">False</property>
                 <property name="placeholder-text" translatable="yes">Ouvrir un document</property>
+                <signal name="activate" handler="_ThekeGotoBar_activate_cb" swapped="no"/>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -85,7 +86,7 @@ Author: a2ohm
             <property name="visible">True</property>
             <property name="can-focus">True</property>
             <property name="orientation">vertical</property>
-            <signal name="notify::max-position" handler="_document_toolsBox_pane_max_position_notify_cb" swapped="no"/>
+            <signal name="notify::max-position" handler="_pane_max_position_notify_cb" swapped="no"/>
             <child>
               <object class="GtkBox">
                 <property name="visible">True</property>
@@ -97,7 +98,7 @@ Author: a2ohm
                     <property name="can-focus">True</property>
                     <property name="position">450</property>
                     <property name="position-set">True</property>
-                    <signal name="notify::max-position" handler="_document_search_pane_max_position_notify_cb" swapped="no"/>
+                    <signal name="notify::max-position" handler="_pane_max_position_notify_cb" swapped="no"/>
                     <child>
                       <object class="ThekeDocumentView" id="_ThekeDocumentView">
                         <property name="visible">True</property>
@@ -137,13 +138,20 @@ Author: a2ohm
                         <property name="margin-end">4</property>
                         <property name="margin-top">2</property>
                         <child>
-                          <object class="GtkStatusbar" id="_statusbar">
+                          <object class="GtkRevealer" id="_statusbar_revealer">
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
-                            <property name="margin-top">3</property>
-                            <property name="margin-bottom">3</property>
-                            <property name="orientation">vertical</property>
-                            <property name="spacing">2</property>
+                            <property name="transition-type">slide-right</property>
+                            <child>
+                              <object class="GtkStatusbar" id="_statusbar">
+                                <property name="visible">True</property>
+                                <property name="can-focus">False</property>
+                                <property name="margin-top">3</property>
+                                <property name="margin-bottom">3</property>
+                                <property name="orientation">vertical</property>
+                                <property name="spacing">2</property>
+                              </object>
+                            </child>
                           </object>
                           <packing>
                             <property name="expand">False</property>
@@ -155,12 +163,25 @@ Author: a2ohm
                           <object class="ThekeSourcesBar" id="_ThekeSourcesBar">
                             <property name="can-focus">False</property>
                             <property name="no-show-all">True</property>
-                            <property name="spacing">4</property>
+                            <property name="transition-type">crossfade</property>
                           </object>
                           <packing>
                             <property name="expand">False</property>
                             <property name="fill">True</property>
                             <property name="position">1</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkSpinner" id="_loading_spinner">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                          </object>
+                          <packing>
+                            <property name="expand">False</property>
+                            <property name="fill">True</property>
+                            <property name="padding">2</property>
+                            <property name="pack-type">end</property>
+                            <property name="position">2</property>
                           </packing>
                         </child>
                       </object>

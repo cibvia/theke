@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 @Gtk.Template.from_file('./theke/gui/templates/ThekeSourcesBar.glade')
-class ThekeSourcesBar(Gtk.Box):
+class ThekeSourcesBar(Gtk.Revealer):
     __gtype_name__ = "ThekeSourcesBar"
 
     __gsignals__ = {
@@ -37,7 +37,7 @@ class ThekeSourcesBar(Gtk.Box):
 
     def updateAvailableSources(self, availableSources):
         if availableSources is None:
-            self.hide()
+            self.set_reveal_child(False)
 
         else:
             self.addSourceMenu = Gtk.Menu()
@@ -50,14 +50,18 @@ class ThekeSourcesBar(Gtk.Box):
                 menuItem_source.show()
 
     def updateSources(self, sources):
-        self._listOfButtons.foreach(lambda y: self._listOfButtons.remove(y))
+        if sources is None:
+            self.set_reveal_child(False)
 
-        for source in sources:
-            button = Gtk.Button(label=source, use_underline=False)
-            button.connect("clicked", self.handle_sourceButton_clicked)
-            button.show_all()
+        else:
+            self._listOfButtons.foreach(lambda y: self._listOfButtons.remove(y))
 
-            self._listOfButtons.add(button)
+            for source in sources:
+                button = Gtk.Button(label=source, use_underline=False)
+                button.connect("clicked", self.handle_sourceButton_clicked)
+                button.show_all()
+
+                self._listOfButtons.add(button)
 
     def handle_sourceButton_clicked(self, button):
         self.sourceMenu.popup_at_widget(button, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)

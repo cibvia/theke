@@ -20,6 +20,9 @@ def get_reference_from_uri(uri):
 
         @param uri: (ThekeUri)
     '''
+    if uri.scheme in theke.uri.webpageSchemes:
+        return WebpageReference(uri = uri)
+
     if uri.path[1] == theke.uri.SEGM_APP:
         return InAppReference(uri.path[2])
 
@@ -117,6 +120,16 @@ class Reference():
 
     def get_uri(self):
         raise NotImplementedError
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Reference):
+            return other.get_repr() == self.get_repr()
+        elif isinstance(other, str):
+            return other == self.get_repr()
+        return False
+
+    def __repr__(self) -> str:
+        return self.get_repr()
 
 class DocumentReference(Reference):
     def update_default_source(self) -> None:
@@ -281,19 +294,24 @@ class InAppReference(Reference):
         return theke.uri.build('theke', ['', theke.uri.SEGM_APP, self.rawReference])
 
 class WebpageReference(Reference):
-    def __init__(self, title, section = None, uri = None):
+    def __init__(self, title = "???", section = None, uri = None):
         super().__init__(rawReference = title)
 
         logger.debug("Reference − Create an external reference : %s", title)
 
         self.type = theke.TYPE_WEBPAGE
+        self.set_title(title)
+
+        self.section = section
+        self.uri = uri
+
+    def set_title(self, title) -> None:
         self.documentName = title
+
         if len(title) > 20:
             self.documentShortname = "{}...".format(title[:17])
         else:
             self.documentShortname = title
-        self.section = section
-        self.uri = uri
 
     def get_repr(self) -> str:
         if self.section is None:

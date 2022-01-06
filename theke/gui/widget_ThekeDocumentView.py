@@ -17,8 +17,6 @@ class ThekeDocumentView(Gtk.Paned):
     __gtype_name__ = "ThekeDocumentView"
 
     __gsignals__ = {
-        'toc-selection-changed': (GObject.SIGNAL_RUN_FIRST, None,
-                      (object,)),
         'document-load-changed': (GObject.SIGNAL_RUN_LAST, None,
                       (object, object)),
         'webview-mouse-target-changed': (GObject.SIGNAL_RUN_LAST, None,
@@ -56,14 +54,15 @@ class ThekeDocumentView(Gtk.Paned):
         # ... document view > webview: where the document is displayed
         self._webview.connect("load_changed", self._document_load_changed_cb)
         self._webview.connect("mouse-target-changed", self._webview_mouse_target_changed_cb)
+        # ... document view > webview > find controller
+        self._webview_findController.connect("found-text", self._local_search_found_text_cb)
+        self._webview_findController.connect("failed-to-find-text", self._local_search_failed_to_find_text_cb)
 
     def _setup_view(self) -> None:
         self.bind_property(
             "local-search-mode-active", self._ThekeLocalSearchBar, "search-mode-active",
             GObject.BindingFlags.BIDIRECTIONAL
             | GObject.BindingFlags.SYNC_CREATE)
-
-        self._ThekeLocalSearchBar.finish_setup()
 
         # Add the webview into the document view
         # (this cannot be done in Glade)
@@ -85,7 +84,6 @@ class ThekeDocumentView(Gtk.Paned):
     def register_navigator(self, navigator):
         self._navigator = navigator
         self._webview.register_navigator(navigator)
-        navigator.register_webview(self._webview)
 
     ### Callbacks (from glade)
     @Gtk.Template.Callback()
@@ -101,15 +99,27 @@ class ThekeDocumentView(Gtk.Paned):
 
     @Gtk.Template.Callback()
     def _toc_treeSelection_changed_cb(self, tree_selection):
-        self.emit("toc-selection-changed", tree_selection)
+        """Go to the selected item of the toc
+        """
+        model, treeIter = tree_selection.get_selected()
 
-    ### Others
+        if treeIter is not None:
+            self._navigator.goto_section(model[treeIter][1])
+
+    ### Other callbacks (from _webview)
     def _document_load_changed_cb(self, web_view, load_event):
-        if load_event == WebKit2.LoadEvent.FINISHED:
+        """Handle the load changed signal of the document view
+
+        This callback is run before mainWindow._documentView_load_changed_cb().
+        """
+        if load_event == WebKit2.LoadEvent.STARTED:
             # Update the table of content
             if self._navigator.toc is None:
                 self.hide_toc()
-            else:
+
+        if load_event == WebKit2.LoadEvent.FINISHED:
+            # Update the table of content
+            if self._navigator.toc is not None:
                 self.set_title(self._navigator.ref.documentName)
                 self.set_content(self._navigator.toc.toc)
 
@@ -126,7 +136,10 @@ class ThekeDocumentView(Gtk.Paned):
 
         self.emit("document-load-changed", web_view, load_event)
 
-    ### Others
+    def _webview_mouse_target_changed_cb(self, web_view, hit_test_result, modifiers):
+        self.emit("webview-mouse-target-changed", web_view, hit_test_result, modifiers)
+
+    ### Other callbacks (local search)
 
     def _local_search_mode_active_cb(self, object, value) -> None:
         if not self.props.local_search_mode_active:
@@ -145,10 +158,20 @@ class ThekeDocumentView(Gtk.Paned):
             self._ThekeLocalSearchBar.search_entry,
             WebKit2.FindOptions.WRAP_AROUND, 100)
 
-    def _webview_mouse_target_changed_cb(self, web_view, hit_test_result, modifiers):
-        self.emit("webview-mouse-target-changed", web_view, hit_test_result, modifiers)
+    def _local_search_found_text_cb(self, find_controller, match_count) -> None:
+        self._ThekeLocalSearchBar.display_match_count(match_count)
 
-    ###
+    def _local_search_failed_to_find_text_cb(self, find_controller) -> None:
+        self._ThekeLocalSearchBar.display_match_count(0)
+
+    ### API of the local search bar
+    def local_search_bar_has_focus(self) -> bool:
+        return self._ThekeLocalSearchBar._search_bar.has_focus()
+
+    def local_search_bar_grab_focus(self) -> None:
+        self._ThekeLocalSearchBar._search_bar.grab_focus()
+
+    ### API of the webview
 
     def grabe_focus(self) -> None:
         self._webview.grab_focus()
