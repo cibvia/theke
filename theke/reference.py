@@ -12,6 +12,25 @@ index = theke.index.ThekeIndex()
 
 DEFAULT_SWORD_BOOK_SECTION = "Couverture"
 
+class comparison():
+    """Byte masks for reference comparison
+    """
+    NOTHING_IN_COMMON = 0 << 0
+    SAME_TYPE = 1 << 0
+
+    # For biblical references comparison...
+    BR_SAME_BOOKNAME = 1 << 1
+    BR_SAME_CHAPTER = 1 << 2
+    BR_SAME_VERSE = 1 << 3
+
+    BR_DIFFERENT_VERSE = SAME_TYPE | BR_SAME_BOOKNAME | BR_SAME_CHAPTER
+
+    # For book references comparison...
+    SAME_DOCUMENTNAME = 1 << 1
+    SAME_SECTION = 1 << 2
+
+    DIFFER_BY_SECTION = SAME_TYPE | SAME_DOCUMENTNAME
+
 def get_reference_from_uri(uri):
     '''Return a reference according to an uri.
         theke:/app/welcome --> inApp reference to the welcome page
@@ -37,9 +56,12 @@ def get_reference_from_uri(uri):
 
         if uri.path[2] == theke.uri.SEGM_BOOK:
             if len(uri.path) == 4:
-                return BookReference(uri.path[3], section = DEFAULT_SWORD_BOOK_SECTION)
+                return BookReference(uri.path[3], section = uri.fragment)
 
-            return BookReference(uri.path[3], section = uri.path[4])
+            if uri.fragment:
+                return BookReference(uri.path[3], section = "_".join([*uri.path[4:], uri.fragment]))
+
+            return BookReference(uri.path[3], section = "_".join(uri.path[4:]))
 
         raise ValueError('Unsupported book type: {}.'.format(uri.path[2]))  
 
@@ -127,6 +149,15 @@ class Reference():
         elif isinstance(other, str):
             return other == self.get_repr()
         return False
+    
+    def __and__(self, other) -> int:
+        if isinstance(other, Reference):
+            if self.type == other.type:
+                return comparison.SAME_TYPE
+            else:
+                return comparison.NOTHING_IN_COMMON
+        else:
+            return comparison.NOTHING_IN_COMMON
 
     def __repr__(self) -> str:
         return self.get_repr()
@@ -240,13 +271,26 @@ class BiblicalReference(DocumentReference):
         self.documentName = documentNames['names'][0]
         self.documentShortname = documentNames['shortnames'][0] if len(documentNames['shortnames']) > 0 else documentNames['names'][0]
 
+    def __and__(self, other) -> int:
+        genericComparaison = super().__and__(other)
+
+        if genericComparaison & comparison.SAME_TYPE:
+            # This is two biblical references
+            return (genericComparaison
+                | comparison.BR_SAME_BOOKNAME * (self.bookName == other.bookName)
+                | comparison.BR_SAME_CHAPTER * (self.chapter == other.chapter)
+                | comparison.BR_SAME_VERSE * (self.verse == other.verse))
+        
+        else:
+            return genericComparaison
+
 class BookReference(DocumentReference):
     def __init__(self, rawReference, rawSources = None, section = None):
         super().__init__(rawReference)
 
         self.type = theke.TYPE_BOOK
         self.documentName = self.rawReference
-        self.section = section
+        self.section = section or ''
 
         self.update_data_from_index()
         self.update_default_source()
@@ -265,10 +309,7 @@ class BookReference(DocumentReference):
         return "{} {}".format(self.documentShortname, self.section)
 
     def get_uri(self):
-        if self.section is None or self.section == DEFAULT_SWORD_BOOK_SECTION:
-            return theke.uri.build('theke', ['', theke.uri.SEGM_DOC, theke.uri.SEGM_BOOK, self.documentName])
-
-        return theke.uri.build('theke', ['', theke.uri.SEGM_DOC, theke.uri.SEGM_BOOK, self.documentName, str(self.section)])
+        return theke.uri.build('theke', ['', theke.uri.SEGM_DOC, theke.uri.SEGM_BOOK, self.documentName], fragment=self.section)
 
     def update_data_from_index(self) -> None:
         """Use the ThekeIndex to update this reference metadata
@@ -278,6 +319,18 @@ class BookReference(DocumentReference):
         documentNames = index.get_document_names(self.documentName)
         self.documentName = documentNames['names'][0]
         self.documentShortname = documentNames['shortnames'][0] if len(documentNames['shortnames']) > 0 else documentNames['names'][0]
+
+    def __and__(self, other) -> int:
+        genericComparaison = super().__and__(other)
+
+        if genericComparaison & comparison.SAME_TYPE:
+            # This is two book references
+            return (genericComparaison
+                | comparison.SAME_DOCUMENTNAME * (self.documentName == other.documentName)
+                | comparison.SAME_SECTION * (self.section == other.section))
+        
+        else:
+            return genericComparaison
 
 class InAppReference(Reference):
     def __init__(self, rawReference, section = None):
@@ -304,7 +357,7 @@ class WebpageReference(Reference):
         self.type = theke.TYPE_WEBPAGE
         self.set_title(title)
 
-        self.section = section
+        self.section = section or uri.fragment
         self.uri = uri
 
     def set_title(self, title) -> None:

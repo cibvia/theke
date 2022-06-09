@@ -1,6 +1,7 @@
 import logging
 
 from gi.repository import Gtk
+from gi.repository import Gio
 from gi.repository import GObject
 from gi.repository import WebKit2
 
@@ -21,6 +22,7 @@ class ThekeDocumentView(Gtk.Paned):
                       (object, object)),
         'webview-mouse-target-changed': (GObject.SIGNAL_RUN_LAST, None,
                       (object, object, int)),
+        'navigation-error': (GObject.SignalFlags.RUN_LAST, None, (int,))
         }
 
     isReduce = GObject.Property(type=bool, default=True)
@@ -85,6 +87,8 @@ class ThekeDocumentView(Gtk.Paned):
         self._navigator = navigator
         self._webview.register_navigator(navigator)
 
+        self._navigator.connect("navigation-error", self._navigator_navigation_error_cb)
+
     ### Callbacks (from glade)
     @Gtk.Template.Callback()
     def ThekeDocumentView_min_position_notify_cb(self, object, param) -> None:
@@ -105,6 +109,10 @@ class ThekeDocumentView(Gtk.Paned):
 
         if treeIter is not None:
             self._navigator.goto_section(model[treeIter][1])
+
+    ### Callbacks (from the navigator)
+    def _navigator_navigation_error_cb(self, object, error) -> None:
+        self.emit("navigation-error", error)
 
     ### Other callbacks (from _webview)
     def _document_load_changed_cb(self, web_view, load_event):
@@ -175,6 +183,29 @@ class ThekeDocumentView(Gtk.Paned):
 
     def grabe_focus(self) -> None:
         self._webview.grab_focus()
+
+    def export_document(self, window) -> None:
+        if self._webview.has_focus():
+            # Save the current document in a html file
+            logger.debug("Export the current document...")
+
+            dialog = Gtk.FileChooserDialog("Exporter le document", window,
+                Gtk.FileChooserAction.SAVE,
+                (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                Gtk.STOCK_SAVE, Gtk.ResponseType.OK))
+            dialog.set_current_name("{}.mhtml".format(self._navigator.title))
+
+            response = dialog.run()
+
+            if response == Gtk.ResponseType.OK:
+                logger.debug("Export the current document in %s", dialog.get_filename())
+                file = Gio.File.new_for_path(dialog.get_filename())
+                self._webview.save_to_file(file, WebKit2.SaveMode.MHTML, None, None, None)
+
+            elif response == Gtk.ResponseType.CANCEL:
+                logger.debug("Export the current document [canceled]")
+
+            dialog.destroy()
 
     # def scroll_to_verse(self, verse) -> None:
     #     self._webview.scroll_to_verse(verse)

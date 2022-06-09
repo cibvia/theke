@@ -12,6 +12,7 @@ import theke.index
 import theke.sword
 import theke.templates
 import theke.reference
+import theke.externalCache
 import theke.tableofcontent
 
 import logging
@@ -41,13 +42,15 @@ class ThekeNavigator(GObject.Object):
     """
 
     __gsignals__ = {
-        'context-updated': (GObject.SignalFlags.RUN_LAST, None, (int,))
+        'context-updated': (GObject.SignalFlags.RUN_LAST, None, (int,)),
+        'navigation-error': (GObject.SignalFlags.RUN_LAST, None, (int,))
         }
 
     ref = GObject.Property(type=object)
 
     toc = GObject.Property(type=object)
 
+    is_loading = GObject.Property(type=bool, default=False)
     isMorphAvailable  = GObject.Property(type=bool, default=False)
     selectedWord = GObject.Property(type=object)
 
@@ -114,11 +117,21 @@ class ThekeNavigator(GObject.Object):
     def update_context_from_uri(self, uri) -> None:
         """Update local context according to the uri
         """
-        if self.ref is not None and uri == self.ref.get_uri():
-            # This is not a new uri, the context stays the same
-            logger.debug("Update context (skip)")
-            self.emit("context-updated", SAME_DOCUMENT)
-            return
+        if self.ref is not None:
+            uriComparison = uri & self.ref.get_uri()
+            if uriComparison == theke.uri.comparison.SAME_URI:
+                # This is exactly the current uri, the context stays the same
+                logger.debug("Update context (skip)")
+                self.is_loading = False
+                self.emit("context-updated", SAME_DOCUMENT)
+                return
+
+            elif uriComparison == theke.uri.comparison.DIFFER_BY_FRAGMENT:
+                # Same uri with a different fragment
+                logger.debug("Update context (section)")
+                self.ref.section = uri.fragment
+                self.emit("context-updated", NEW_SECTION)
+                return
 
         ref = theke.reference.get_reference_from_uri(uri)
         self.update_context_from_ref(ref)
@@ -136,23 +149,17 @@ class ThekeNavigator(GObject.Object):
          - NEW_DOCUMENT: different uri
             --> the context is updated
         """
-
-        if ref.type == theke.TYPE_UNKNOWN:
-            logger.error("Reference type not supported: %s", ref)
-            return
-
-        elif ref.type == theke.TYPE_BIBLE:
+        self.is_loading = True
+        
+        if ref.type == theke.TYPE_BIBLE:
             logger.debug("Update context [bible]")
 
-            if (self.ref is not None and
-                self.ref.type == theke.TYPE_BIBLE and
-                self.ref.bookName == ref.bookName and
-                self.ref.chapter == ref.chapter and
-                self.ref.verse != ref.verse):
+            # Same biblical reference with a different verse number
+            if (ref & self.ref) == theke.reference.comparison.BR_DIFFERENT_VERSE:
 
-                # Same reference except the verse number
                 self.ref.verse = ref.verse
 
+                self.is_loading = False
                 self.emit("context-updated", NEW_VERSE)
                 return
 
@@ -167,8 +174,31 @@ class ThekeNavigator(GObject.Object):
             self.emit("context-updated", NEW_DOCUMENT)
             return
 
-        else:
-            logger.debug("Update context [book/inApp]")
+        elif ref.type == theke.TYPE_BOOK:
+
+            # Same book reference with a different section name
+            if (ref & self.ref) == theke.reference.comparison.DIFFER_BY_SECTION:
+                logger.debug("Update context [book] (section)")
+
+                self.ref.section = ref.section
+                self.is_loading = False
+                self.emit("context-updated", NEW_SECTION)
+                return
+
+            logger.debug("Update context [book]")
+            sourceType = self.index.get_source_type(ref.sources[0])
+
+            if sourceType == theke.index.SOURCETYPE_EXTERN:
+                if not theke.externalCache.is_source_cached(ref.sources[0]):
+                    contentUri = self.index.get_source_uri(ref.sources[0])
+                    if not theke.externalCache.cache_document_from_external_source(ref.sources[0], contentUri):
+                        # Fail to cache the document from the external source
+                        self.is_loading = False
+                        self.emit("navigation-error", theke.NavigationErrors.EXTERNAL_SOURCE_INACCESSIBLE)
+                        return
+
+                if not theke.externalCache.is_cache_cleaned(ref.sources[0]):
+                    theke.externalCache._build_clean_document(ref.sources[0])
 
             with self.freeze_notify():
                 self.set_property("ref", ref)
@@ -176,6 +206,21 @@ class ThekeNavigator(GObject.Object):
                 self.set_property("isMorphAvailable", False)
 
             self.emit("context-updated", NEW_DOCUMENT)
+            return
+
+        elif ref.type == theke.TYPE_INAPP:
+            logger.debug("Update context [inApp]")
+
+            with self.freeze_notify():
+                self.set_property("ref", ref)
+                self.set_property("toc", None)
+                self.set_property("isMorphAvailable", False)
+
+            self.emit("context-updated", NEW_DOCUMENT)
+            return
+
+        else:
+            logger.error("Reference type not supported: %s", ref)
             return
 
     ### Get content
@@ -226,8 +271,19 @@ class ThekeNavigator(GObject.Object):
                         logger.debug("Load as a sword uri (BOOK): %s", uri)
                         html = self.get_sword_book_content()
 
+                    if sourceType == theke.index.SOURCETYPE_EXTERN:
+                        logger.debug("Load as an extern uri (BOOK): %s", uri)
+                        html = self.get_external_book_content()
+
             else:
-                raise ValueError('Unsupported theke uri: {}.'.format(uri))
+                # Temporary solution:
+                #   Permit to load document from a cached source
+                #   even if it contains images and other contents
+                #   that are not cached
+
+                #raise ValueError('Unsupported theke uri: {}.'.format(uri))
+                logger.error('Unsupported theke uri: %s.', uri)
+                html = ''
 
             html_bytes = GLib.Bytes.new(html.encode('utf-8'))
             tmp_stream_in = Gio.MemoryInputStream.new_from_bytes(html_bytes)
@@ -278,12 +334,15 @@ class ThekeNavigator(GObject.Object):
             'mod_description': mod.get_description(),
             'text': text})
 
-    def get_external_book_content(self, externalUri) -> None:
+    def get_external_book_content(self) -> None:
         """Load an external source
         """
-        return theke.templates.render('external', {
+
+        document_path = theke.externalCache.get_best_source_file_path(self.ref.sources[0], relative=True)
+
+        return theke.templates.render('external_book', {
             'ref': self.ref,
-            'uri': externalUri})
+            'document_path': document_path})
 
     ### Signals handling
 
@@ -343,14 +402,7 @@ class ThekeNavigator(GObject.Object):
 
     @GObject.Property(type=str)
     def contentUri(self):
-        """Encoded URI to be used to recover the document content.
-
-        This is the theke uri except for external documents.
+        """Return the uri of the document
         """
-        if self.ref.type == theke.TYPE_BOOK:
-            sourceType = self.index.get_source_type(self.ref.sources[0])
 
-            if sourceType == theke.index.SOURCETYPE_EXTERN:
-                return self.index.get_source_uri(self.ref.sources[0])
-            
         return self.ref.get_uri().get_encoded_URI()
